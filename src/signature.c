@@ -75,7 +75,7 @@ const char *get_signature(void) {
         
         snprintf(signature + base_len, 
                  MAX_SIGNATURE_LEN - base_len, 
-                 "[%016x]", 
+                 "[%08x]", 
                  fingerprint);
         
         decrypted = true;
