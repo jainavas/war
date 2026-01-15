@@ -30,8 +30,16 @@ YELLOW = \033[0;33m
 RED = \033[0;31m
 RESET = \033[0m
 
+METAMORPH_SHELLCODE = $(INC_PATH)metamorph_shellcode.h
 
-all: $(NAME)
+all: $(METAMORPH_SHELLCODE) $(NAME)
+
+$(METAMORPH_SHELLCODE): src/metamorph.c
+	@printf "$(YELLOW)Generating metamorph shellcode...$(RESET)\n"
+	@mkdir -p obj
+	@./scripts/build_shellcode.sh && \
+		printf "$(GREEN)✔ Shellcode generated!$(RESET)\n" || \
+		printf "$(RED)✘ Shellcode generation failed!$(RESET)\n"
 
 $(NAME): $(OBJS)
 	@printf "$(YELLOW)Building $(NAME)...$(RESET) \n"
@@ -71,6 +79,7 @@ fclean: clean
 	@printf "$(BLUE)Removing binaries, dependencies and object files...$(RESET) \n"
 	@rm -f $(NAME)
 	@rm -f $(NAME)_obfuscated
+	@rm -f $(METAMORPH_SHELLCODE)
 	@printf "$(GREEN)✔ Directory cleaned succesfully!$(RESET) \n"
 
 re: fclean all

