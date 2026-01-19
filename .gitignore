@@ -1,3 +1,5 @@
 vm/
 CLAUDE.md
 scripts/
+src/metamorph_*
+obj/
