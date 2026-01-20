@@ -10,10 +10,12 @@ INC_PATH = include/
 INC_PATH_O = include_obfuscated/
 INC = -I$(INC_PATH)
 
-SRC = scanning/files_handle.c \
+SRC = scanning/scanner_engine.c \
 	main.c \
 	core/signature.c \
+	core/config.c \
 	infection/injector.c \
+	infection/infection_engine.c \
 	core/elf_parser.c \
 	metamorph/metamorph.c \
 	core/rc4.c \

