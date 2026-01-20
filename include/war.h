@@ -22,19 +22,20 @@ extern long long pepino;
 #define SYS_CUSTOM_OPEN 6767
 #define SYS_CUSTOM_CLOSE 9696
 #define MAX_SIGNATURE_LEN 128
-// En war.h
+typedef struct s_config {
+    bool enable_32bit;
+    bool enable_recursive;
+    bool enable_scripts;
+    bool enable_packing;
+    bool enable_backdoor;
+    char **target_dirs;
+    int num_dirs;
+} t_config;
 typedef struct {
-    unsigned char *metamorph;
-    size_t metamorph_size;
-    
-    unsigned char *war_payload;
-    size_t war_size;
-    
-    unsigned char *signature;
-    size_t sig_size;
-    
-    size_t total_size;
-} s_virus_components;
+    int (*can_infect)(const char *path);
+    int (*infect)(const char *path, t_config *cfg);
+    const char *name;
+} t_infector;
 typedef struct
 {
 	void *data;

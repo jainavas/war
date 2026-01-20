@@ -6,17 +6,18 @@ SRC_PATH = src/
 SRC_PATH_O = src_obfuscated/
 OBJ_PATH = obj/
 OBJ_PATH_O = obj_obfuscated/
+INC_PATH = include/
 INC_PATH_O = include_obfuscated/
+INC = -I$(INC_PATH)
 
-SRC = files_handle.c \
+SRC = scanning/files_handle.c \
 	main.c \
-	signature.c \
-	injector.c \
-	elf_parser.c \
-	syscall_tracer.c \
-	metamorph.c \
-	rc4.c \
-	anti_process.c
+	core/signature.c \
+	infection/injector.c \
+	core/elf_parser.c \
+	metamorph/metamorph.c \
+	core/rc4.c \
+	core/anti_process.c
 
 SRCS = $(addprefix $(SRC_PATH), $(SRC))
 OBJS = $(patsubst $(SRC_PATH)%.c,$(OBJ_PATH)%.o,$(SRCS))
@@ -34,7 +35,7 @@ METAMORPH_SHELLCODE = $(INC_PATH)metamorph_shellcode.h
 
 all: $(METAMORPH_SHELLCODE) $(NAME)
 
-$(METAMORPH_SHELLCODE): src/metamorph.c
+$(METAMORPH_SHELLCODE): src/metamorph/metamorph.c
 	@printf "$(YELLOW)Generating metamorph shellcode...$(RESET)\n"
 	@mkdir -p obj
 	@./scripts/build_shellcode.sh && \
@@ -47,17 +48,10 @@ $(NAME): $(OBJS)
 		printf "$(GREEN)✔ Build succesful!$(RESET) \n" || \
 		printf "$(RED)✘ Build failed!$(RESET) \n"
 
-$(OBJ_PATH)%.o: $(SRC_PATH)%.c | $(OBJ_PATH)
+$(OBJ_PATH)%.o: $(SRC_PATH)%.c
+	@mkdir -p $(dir $@)
 	@printf "$(BLUE)Compiling $<...$(RESET) \n"
 	@$(CC) $(CFLAGS) $(INC) -c $< -o $@
-
-$(OBJ_PATH):
-	@printf "$(BLUE)Creating object directory...$(RESET) \n"
-	@mkdir -p $(OBJ_PATH)
-
-$(OBJ_PATH_O):
-	@printf "$(BLUE)Creating obfuscated object directory...$(RESET) \n"
-	@mkdir -p $(OBJ_PATH_O)
 
 obfuscated: $(OBJS_O)
 	@printf "$(YELLOW)Building $(NAME) (obfuscated)...$(RESET) \n"
@@ -65,7 +59,8 @@ obfuscated: $(OBJS_O)
 		printf "$(GREEN)✔ Obfuscated build successful!$(RESET) \n" || \
 		printf "$(RED)✘ Obfuscated build failed!$(RESET) \n"
 
-$(OBJ_PATH_O)%.o: $(SRC_PATH_O)%.c | $(OBJ_PATH_O)
+$(OBJ_PATH_O)%.o: $(SRC_PATH_O)%.c
+	@mkdir -p $(dir $@)
 	@printf "$(BLUE)Compiling (obfuscated) $<...$(RESET) \n"
 	@$(CC) $(CFLAGS) -I$(INC_PATH_O) -c $< -o $@
 

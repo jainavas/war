@@ -1,4 +1,4 @@
-#include "../include/war.h"
+#include "../../include/war.h"
 
 static const unsigned char OBFUSCATED_KEY[] = {
     0x76, 0x70, 0x66, 0x66, 0x35, 0x23, 0x30, 0x66, 0x66
