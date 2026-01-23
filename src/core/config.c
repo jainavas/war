@@ -7,7 +7,7 @@ t_config *config_create_default(void) {
     if (!cfg) return NULL;
     
     // Bonus disabled por defecto
-    cfg->enable_32bit = false;
+    cfg->enable_32bit = true;
     cfg->enable_recursive = false;
     cfg->enable_scripts = false;
     cfg->enable_packing = false;

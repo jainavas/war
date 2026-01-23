@@ -2,6 +2,9 @@ NAME = war
 CC = gcc
 CFLAGS = -Wall -Wextra -Werror -g3
 
+# Debug flags - activar con: make debug
+DEBUG_FLAGS = -DDEBUG
+
 SRC_PATH = src/
 SRC_PATH_O = src_obfuscated/
 OBJ_PATH = obj/
@@ -15,6 +18,7 @@ SRC = scanning/scanner_engine.c \
 	core/signature.c \
 	core/config.c \
 	infection/injector.c \
+	infection/injector_32.c \
 	infection/infection_engine.c \
 	core/elf_parser.c \
 	metamorph/metamorph.c \
@@ -40,7 +44,7 @@ all: $(METAMORPH_SHELLCODE) $(NAME)
 $(METAMORPH_SHELLCODE): src/metamorph/metamorph.c
 	@printf "$(YELLOW)Generating metamorph shellcode...$(RESET)\n"
 	@mkdir -p obj
-	@./scripts/build_shellcode.sh && \
+	@./scripts/build_shellcode.sh && ./scripts/build_shellcode_32.sh\
 		printf "$(GREEN)✔ Shellcode generated!$(RESET)\n" || \
 		printf "$(RED)✘ Shellcode generation failed!$(RESET)\n"
 
@@ -77,12 +81,18 @@ fclean: clean
 	@rm -f $(NAME)
 	@rm -f $(NAME)_obfuscated
 	@rm -f $(METAMORPH_SHELLCODE)
+	@rm -f $(INC_PATH)metamorph_shellcode_x86.h
 	@printf "$(GREEN)✔ Directory cleaned succesfully!$(RESET) \n"
 
 re: fclean all
+
+# Debug build - incluye prints de debug para 32-bit y otros componentes
+debug: CFLAGS += $(DEBUG_FLAGS)
+debug: fclean $(METAMORPH_SHELLCODE) $(NAME)
+	@printf "$(GREEN)✔ Debug build complete! Run ./war to see debug output$(RESET)\n"
 
 call: all clean
 	@printf "$(YELLOW)Cleaning dependency builds...$(RESET) \n"
 	@printf "$(GREEN)✔ Dependency builds cleaned succesfully!$(RESET) \n"
 
-.PHONY: all clean fclean re call obfuscated
+.PHONY: all clean fclean re call obfuscated debug

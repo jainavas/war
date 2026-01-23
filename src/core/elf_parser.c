@@ -1,4 +1,94 @@
 #include "../../include/war.h"
+
+// Debug macro
+#ifdef DEBUG
+#define DEBUG_PARSER(fmt, ...) fprintf(stderr, "[DEBUG-PARSER] " fmt "\n", ##__VA_ARGS__)
+#else
+#define DEBUG_PARSER(fmt, ...) ((void)0)
+#endif
+
+int parse_elf_unified(const char *filename, t_elf_unified *elf) {
+    DEBUG_PARSER("parse_elf_unified: %s", filename);
+    
+    int fd = custom_open(filename, O_RDONLY);
+    if (fd < 0) {
+        DEBUG_PARSER("  ERROR: custom_open failed");
+        return -1;
+    }
+    
+    struct stat st;
+    if (fstat(fd, &st) < 0) {
+        DEBUG_PARSER("  ERROR: fstat failed");
+        custom_close(fd);
+        return -1;
+    }
+    
+    elf->size = st.st_size;
+    DEBUG_PARSER("  file size: %zu", elf->size);
+    
+    elf->data = mmap(NULL, elf->size, PROT_READ, MAP_PRIVATE, fd, 0);
+    custom_close(fd);
+    
+    if (elf->data == MAP_FAILED) {
+        DEBUG_PARSER("  ERROR: mmap failed");
+        return -1;
+    }
+    DEBUG_PARSER("  mmap: %p", elf->data);
+    
+    // Verificar magic ELF
+    if (memcmp(elf->data, ELFMAG, SELFMAG) != 0) {
+        DEBUG_PARSER("  ERROR: Invalid ELF magic");
+        munmap(elf->data, elf->size);
+        return -1;
+    }
+    DEBUG_PARSER("  ELF magic: OK");
+    
+    // Leer clase (32 o 64 bits)
+    unsigned char *e_ident = (unsigned char *)elf->data;
+    elf->class = e_ident[EI_CLASS];
+    DEBUG_PARSER("  ELF class: %d (1=32bit, 2=64bit)", elf->class);
+    
+    if (elf->class == ELFCLASS32) {
+        // ELF de 32 bits
+        DEBUG_PARSER("  Parsing as ELF32...");
+        elf->ehdr32 = (Elf32_Ehdr *)elf->data;
+        elf->phdr32 = (Elf32_Phdr *)(elf->data + elf->ehdr32->e_phoff);
+        elf->shdr32 = (Elf32_Shdr *)(elf->data + elf->ehdr32->e_shoff);
+        DEBUG_PARSER("    e_entry: 0x%08x", elf->ehdr32->e_entry);
+        DEBUG_PARSER("    e_phoff: 0x%08x", elf->ehdr32->e_phoff);
+        DEBUG_PARSER("    e_shoff: 0x%08x", elf->ehdr32->e_shoff);
+        DEBUG_PARSER("    e_phnum: %d", elf->ehdr32->e_phnum);
+        DEBUG_PARSER("    e_shnum: %d", elf->ehdr32->e_shnum);
+        DEBUG_PARSER("    e_type: %d", elf->ehdr32->e_type);
+        DEBUG_PARSER("    e_machine: %d (3=i386)", elf->ehdr32->e_machine);
+        
+    } else if (elf->class == ELFCLASS64) {
+        // ELF de 64 bits
+        DEBUG_PARSER("  Parsing as ELF64...");
+        elf->ehdr64 = (Elf64_Ehdr *)elf->data;
+        elf->phdr64 = (Elf64_Phdr *)(elf->data + elf->ehdr64->e_phoff);
+        elf->shdr64 = (Elf64_Shdr *)(elf->data + elf->ehdr64->e_shoff);
+        DEBUG_PARSER("    e_entry: 0x%016lx", elf->ehdr64->e_entry);
+        DEBUG_PARSER("    e_phoff: 0x%lx", elf->ehdr64->e_phoff);
+        DEBUG_PARSER("    e_phnum: %d", elf->ehdr64->e_phnum);
+        
+    } else {
+        DEBUG_PARSER("  ERROR: Unknown ELF class %d", elf->class);
+        munmap(elf->data, elf->size);
+        return -1;
+    }
+    
+    DEBUG_PARSER("  SUCCESS");
+    return 0;
+}
+
+void cleanup_elf_unified(t_elf_unified *elf) {
+    DEBUG_PARSER("cleanup_elf_unified: data=%p, size=%zu", elf->data, elf->size);
+    if (elf->data) {
+        munmap(elf->data, elf->size);
+    }
+}
+
 int parse_elf(const char *filename, t_elf *elf)
 {
 	int fd = custom_open(filename, O_RDONLY);

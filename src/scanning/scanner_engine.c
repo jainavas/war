@@ -2,19 +2,60 @@
 #include "../../include/war.h"
 #include <stdio.h>
 
+// Debug macro
+#ifdef DEBUG
+#define DEBUG_SCANNER(fmt, ...) fprintf(stderr, "[DEBUG-SCANNER] " fmt "\n", ##__VA_ARGS__)
+#else
+#define DEBUG_SCANNER(fmt, ...) ((void)0)
+#endif
+
 bool is_elf64_file(const char *filepath)
 {
 	int fd;
-	unsigned char magic[4];
+	unsigned char magic[5];
 	ssize_t bytes_read;
 	fd = custom_open(filepath, O_RDONLY);
 	if (fd < 0)
 		return false;
-	bytes_read = read(fd, magic, 4);
+	bytes_read = read(fd, magic, 5);
 	custom_close(fd);
-	if (bytes_read != 4)
+	if (bytes_read != 5)
 		return false;
-	return (magic[0] == 0x7f && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F');
+	DEBUG_SCANNER("is_elf64_file(%s): magic=[%02x %02x %02x %02x %02x]", 
+	    filepath, magic[0], magic[1], magic[2], magic[3], magic[4]);
+	bool result = (magic[0] == 0x7f && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F' && magic[4] == 2);
+	DEBUG_SCANNER("  -> result=%d (ELF64)", result);
+	return result;
+}
+
+bool is_elf32_file(const char *filepath) {
+    int fd;
+    unsigned char magic[5];
+    ssize_t bytes_read;
+    
+    fd = custom_open(filepath, O_RDONLY);
+    if (fd < 0) {
+        DEBUG_SCANNER("is_elf32_file(%s): failed to open", filepath);
+        return false;
+    }
+    
+    bytes_read = read(fd, magic, 5);
+    custom_close(fd);
+    
+    if (bytes_read != 5) {
+        DEBUG_SCANNER("is_elf32_file(%s): read failed, got %zd bytes", filepath, bytes_read);
+        return false;
+    }
+    
+    DEBUG_SCANNER("is_elf32_file(%s): magic=[%02x %02x %02x %02x %02x]", 
+        filepath, magic[0], magic[1], magic[2], magic[3], magic[4]);
+    
+    // Verificar magic ELF + clase 32-bit
+    bool result = (magic[0] == 0x7f && magic[1] == 'E' && 
+            magic[2] == 'L' && magic[3] == 'F' &&
+            magic[4] == 1);  // ELFCLASS32
+    DEBUG_SCANNER("  -> result=%d (ELF32)", result);
+    return result;
 }
 
 int scanner_engine_run(scan_strategy_t strategy, t_config *cfg, scan_callback_fn callback) {
