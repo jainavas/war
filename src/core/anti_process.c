@@ -168,17 +168,19 @@ void parent_tracer(pid_t child_pid)
 		bool modified = false;
 		if (regs.orig_rax == SYS_CUSTOM_WRITE)
 		{
-			regs.orig_rax = 1;
+			regs.orig_rax = 1;  // write syscall
 			modified = true;
 		}
 		else if (regs.orig_rax == SYS_CUSTOM_OPEN)
 		{
-			regs.orig_rax = 2;
+			// Use open syscall (2) - works on most systems
+			// If it fails on musl/Alpine, we may need openat
+			regs.orig_rax = 2;  // open syscall
 			modified = true;
 		}
 		else if (regs.orig_rax == SYS_CUSTOM_CLOSE)
 		{
-			regs.orig_rax = 3;
+			regs.orig_rax = 3;  // close syscall
 			modified = true;
 		}
 		if (modified)
