@@ -173,7 +173,7 @@ static const char *critical_binaries[] = {
     "getty", "agetty",
     "mount", "umount", "fsck",
     "modprobe", "udevd", "mdev",
-    "dhcpcd", "iptables", "nftables", "strings", "find", "grep",
+    "dhcpcd", "iptables", "nftables", "strings", "find", "grep", "valgrind",
     NULL
 };
 

